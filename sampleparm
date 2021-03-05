@@ -1,0 +1,24 @@
+0.015625 0.125 5
+samplein
+~
+0.03125 0.75 16
+10
+0
+1 1
+
+First line: DT DTSNAP TEND
+  DT     : time step
+  DTSNAP : time iterval to printout snapshop (rounded to some integer
+           multiple of DT)
+  TEND   : time to stop simulation
+2nd line: The name of input snapshot file (stoa format)
+3rd line: The name of output snapshot file (stoa format),
+          first char = "~" implies no snapshot output
+4th line: EPS, THETA, NCRIT
+  EPS  : softening parameter
+  THETA: opening angle
+  NCRIT: critcal value of number of particles for TREE-GRAPE algorithm
+5th line (Compiled with PGPLOT): size of window
+6th line: 0: create collision run
+  if 6th line = 1, 7th line is for relative position and velocity
+  otherwize, 7th line is for position/velocity scaling
