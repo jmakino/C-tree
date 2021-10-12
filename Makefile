@@ -38,7 +38,8 @@ EXPORT_FILES = BHtree.h nbody_particle.h vector.h \
 	       second.c \
 	       Makefile nbody_guide.tex\
                README COPYRIGHT \
-               samplein sampleparm samplelog
+               samplein sampleparm samplelog \
+	       utils.hpp
 
 ADDITIONAL_FILES = hom32.stoa hom64.stoa hom32k.stoa hom1M.stoa
 A64FXFFLAGS        =  -O3 -cpp -g -pg -p -march=armv8-a+sve+simd # -fopenmp
@@ -73,6 +74,7 @@ sendtofx700: $(FILESTOSENDTOFX700)
 
 export: 
 	rsync -avp $(EXPORT_FILES) $(EXPORTDIR)
+	cd $(EXPORTDIR); git commit -a ; git push
 export.tar.gz: $(EXPORT_FILES)
 	tar cvf export.tar  $(EXPORT_FILES)
 	gzip export.tar 
