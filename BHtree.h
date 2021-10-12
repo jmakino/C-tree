@@ -7,7 +7,7 @@
  */
 
     
-
+#define NCHILDLEN  8
 const int default_key_length = 15;
 const int default_ix_offset = 1<<(default_key_length-1);
 // First include some particle class
@@ -16,6 +16,9 @@ const int default_ix_offset = 1<<(default_key_length-1);
 #include "nbody_particle.h"
 #define NBODY
 #ifdef NBODY
+class nbody_particle;
+class nbody_system;
+
 typedef nbody_particle real_particle;
 typedef nbody_system real_system;
 #endif
@@ -35,7 +38,24 @@ typedef sph_system real_system;
 #endif
 
 
-const int ilist_max = 1000;
+class child_nodes{
+ public:
+    real posx[NCHILDLEN];
+    real posy[NCHILDLEN];
+    real posz[NCHILDLEN];
+    real l[NCHILDLEN];
+    int64_t cindex[NCHILDLEN];
+    int64_t pindex[NCHILDLEN];
+    int64_t nparticle[NCHILDLEN];
+    int64_t isleaf[NCHILDLEN];
+    real cmposx[NCHILDLEN];
+    real cmposy[NCHILDLEN];
+    real cmposz[NCHILDLEN];
+    real cmmass[NCHILDLEN];
+};
+    
+
+const int ilist_max = 3000;
 
 class  interaction_list{
  public:
@@ -66,11 +86,10 @@ class  interaction_list{
 
 class bhparticle
 {
-private:
-    real_particle * rp;
-    BHlong key;
     
 public:
+    real_particle * rp;
+    BHlong key;
     bhparticle(){
 	rp = NULL;
 	key = 0;
@@ -87,7 +106,7 @@ public:
 
 class bhnode
 {
-private:
+public:
     static int nplimit;
     vector pos;
     real l;
@@ -101,7 +120,6 @@ private:
     vector cmpos;
     real cmmass;
     
-public:
     interaction_list * pilist;
     bhnode(){
 	pos = 0.0;
@@ -144,6 +162,11 @@ public:
     void assign_root(vector root_pos, real length, bhparticle * bp, int nparticle);
     void dump(int indent = 0);
     int sanity_check();
+    void setup_child_nodes(child_nodes* &c,
+			   child_nodes* cbase,
+			   bhnode* nfirst,
+			   bhparticle* pfirst);
+	
 #ifdef SPH    
     void set_hmax_for_sph();
     real get_hmax_for_sph(){return hmax_for_sph;}
@@ -165,7 +188,21 @@ public:
 				      int & nlist,
 				      int list_max,
 				      int & first_leaf);
+    void add_to_neighbour_list_leafcell(bhnode & dest_node, real cutoff,
+				      vector * pos_list,
+				      real * mass_list,
+				      int & nlist,
+				      int list_max,
+				      int & first_leaf);
+    void add_to_neighbour_list_leafcell2(bhnode & dest_node, real cutoff,
+				      vector * pos_list,
+				      real * mass_list,
+				      int & nlist,
+				      int list_max,
+				      int & first_leaf);
     void evaluate_gravity_using_tree_and_list(bhnode & source_node,
+					      child_nodes * cn,
+					      bhparticle * bp,
 					      real theta2,
 					      real eps2,
 					      int ncrit);
@@ -181,6 +218,23 @@ public:
     void dump_interaction_list();
     void clear_interaction_list();
     void update_tree_counters();
+    void bfs_add_to_interaction_list_step(bhnode * nodes,  real theta2,
+					  int * index_list,
+					  int * newindex,
+						  int & nnodes,
+					  vector * pos_list,
+					  real * mass_list,
+					  int & nlist,
+					  int list_max,
+					  int & first_leaf);
+    void bfs_add_to_interaction_list(bhnode * nodes,  real theta2,
+					     bhnode * top,
+					     vector * pos_list,
+					     real * mass_list,
+					 int & nlist,
+					     int list_max,
+					     int & first_leaf);
+    
 };
 
 

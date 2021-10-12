@@ -138,7 +138,7 @@ public:
 	     return *this;}
 
 	vector& operator /= (const real b)
-	    {register real binv = 1.0/b;
+	    {real binv = 1.0/b;
              element[0] *= binv;
 	     element[1] *= binv;
 	     element[2] *= binv;

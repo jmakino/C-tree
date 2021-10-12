@@ -26,6 +26,8 @@
 #include  <math.h>
 #include  <iostream>
 #include  <cstring>
+#define UTILBASE
+#include "utils.hpp"
 
 using namespace std;
 
@@ -35,6 +37,8 @@ using namespace std;
 #define real double
 #include "vector.h"
 #include "nbody_particle.h"
+class child_nodes;
+#include "nbody_system.h"
 #define NBODY
 
 
@@ -383,7 +387,7 @@ void real_system::make_collision(vector relpos, vector relv)
 // -T        time to stop integration          (default: 10)
 // -e        softening parameter epsilon2      (default: 0.025)
 // -t        opening angle theta               (default: 0.75)
-// -n        ncrit for Barnes' vectrization    (default: 1024)
+// -n        ncrit for Barnes' vectrization    (default: 64)
 //           (ONLY used with GRAPE/HARP inplementation)
 // -w        window size for PGPLOT snapshot plot (default: 10)
 // -c        flag for collision run
@@ -392,7 +396,7 @@ void real_system::make_collision(vector relpos, vector relv)
 // -s        scale factor for position scaling (default: 1)
 // -S        scale factor for velocity scaling (default: 1)
 //---------------------------------------------------------------------
-main(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     static real_system pb;
     ifstream fsnapin;
@@ -412,7 +416,7 @@ main(int argc, char ** argv)
     foname[1] = '\0';
     real eps = 0.025;
     real theta = 0.75;
-    int ncrit = 1024;
+    int ncrit = 64;
     int collision_flag = 0;
     int relx_flag = 0;
     int relv_flag = 0;
@@ -473,7 +477,7 @@ main(int argc, char ** argv)
 		      cerr << "-T        time to stop integration          (default: 10)\n";
 		      cerr << "-e        softening parameter epsilon2      (default: 0.025)\n";
 		      cerr << "-t        opening angle theta               (default: 0.75)\n";
-		      cerr << "-n        ncrit for Barnes' vectrization    (default: 1024)\n";
+		      cerr << "-n        ncrit for Barnes' vectrization    (default: 64)\n";
 		      cerr << "          (ONLY used with GRAPE/HARP inplementation)\n";
 		      cerr << "-w        window size for PGPLOT snapshot plot (default: 10)\n";
 		      cerr << "-c        flag for collision run\n";
@@ -486,18 +490,22 @@ main(int argc, char ** argv)
 		      break;
 		  }
     }
-    if (snapin_flag == 0){
-	cerr << "Snapshot input file required (-i)\n";
-	exit(1);
-    }
-
+    NbodyLib::SetWtimeBase();
     PR(dt); PR(dtsnapout); PRL(tend);
     cout << "dt= " << dt
          << " dtsnapout= " << dtsnapout
          << " tend= " <<tend<<endl;
     cerr << "outfile=<" <<foname<<">\n";
     cout << "snapin=" << fname << " snapout=" << foname <<endl;
+    if (snapin_flag == 0){
+	cerr << "Snapshot input file required (-i)\n";
+	exit(1);
+    }
     fsnapin.open(fname,ios::in);
+    if (!fsnapin){
+	cerr << "Failed to open file " << fname << ", exit\n";
+	exit(-1);
+    }
     pb.atos(fsnapin);
     cout << "n= " << pb.n << endl;
     pb.use_self_gravity = 1;
@@ -533,7 +541,7 @@ main(int argc, char ** argv)
     dt = tend/nstep;
     int outsnapstep = (int) (dtsnapout/dt+0.1);
     pb.calculate_gravity();
-
+    if (snapout)pb.stoa(fsnapout);
     real E0 = pb.energy();
     PRL(E0);
     cout << "E0 = " <<E0<<endl;
@@ -541,7 +549,7 @@ main(int argc, char ** argv)
     for(int i=0;i<nstep;i++){
 	pb.time = (i+1)*dt;
 	pb.integrate(dt);
-	cerr << "Exit integrate, cpu = " <<cpusec() << endl;
+	cerr << "Exit integrate, cpu = " <<NbodyLib::GetWtime() << endl;
 	if ( i%outlogstep == outlogstep - 1){
 	    real KE = pb.kinetic_energy();
 	    real E = pb.energy();
@@ -556,7 +564,7 @@ main(int argc, char ** argv)
 	if(i % outsnapstep == outsnapstep - 1){
 	    if (snapout)pb.stoa(fsnapout);
 	}
-	cout << "CPU sec = " <<cpusec() << endl <<endl;
+	cout << "CPU sec = " <<NbodyLib::GetWtime() << endl <<endl;
     }
     if (snapout)fsnapout.close();
     

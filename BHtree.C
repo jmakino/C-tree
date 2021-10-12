@@ -26,20 +26,24 @@
 
 extern "C" double cpusec();
 
-
+#ifndef PRC
 #define PR(x)  cerr << #x << " = " << x << " "
 #define PRC(x) cerr << #x << " = " << x << ",  "
 #define PRL(x) cerr << #x << " = " << x << "\n"
+#endif
 
 #include  <stdlib.h>
 #include  <math.h>
 #include  <iostream>
+#include "utils.hpp"
 
+const int LISTMAX = 40000;
 using namespace std;
 
 
 #define real double
 #include "BHtree.h"
+#include "nbody_system.h"
 
 int bhnode::nplimit = 1;
 
@@ -197,12 +201,12 @@ real initialize_key(int nbody,
 	p->set_key(rscale, default_ix_offset, default_key_length);
 	//	PR(i); PRL(p->get_key());
     }
-    cerr << "Call quicksort, cpu = " <<cpusec() << endl;
+    cerr << "Call quicksort, cpu = " <<NbodyLib::GetWtime() << endl;
     //    sort_bh_array(bhp,0,nbody-1);
     qsort(bhp, nbody, sizeof(bhparticle), compare_key);
     // The private sort routine is for some unknow reason
     // much faster than qsort of the system for large N
-    cerr << "Exit quicksort, cpu = " <<cpusec() << endl;
+    cerr << "Exit quicksort, cpu = " <<NbodyLib::GetWtime() << endl;
     for(int i = 0; i<nbody; i++){
 	bhparticle * p = bhp + i;
 	//	PR(i); PR(p->get_key()); PRL(p->get_rp()->get_index());
@@ -289,28 +293,28 @@ void bhnode::create_tree_recursive(bhnode * & heap_top, int & heap_remainder,
 
 void spc(int indent)
 {
-    for(int i=0;i<indent;i++)cerr << " ";
+    for(int i=0;i<indent;i++)printf(" ");
 }
 
 void bhnode::dump(int indent)
 {
     int i;
-    spc(indent); cerr << "node pos " << pos ;
-#ifdef SPH    
-    cerr << " h " << hmax_for_sph;
-#endif
-    cerr << endl;
-    spc(indent); cerr << "node cm  " << cmpos << " m " << cmmass ;
+    spc(indent); printf("node pos %g %g %g", pos[0], pos[1], pos[2]);
+    printf(" cmpos %g %g %g", cmpos[0], cmpos[1], cmpos[2]);
+    printf(" mass %g", cmmass);
+
     if (isleaf){
-	cerr << " IS LEAF" ;PRL(nparticle);
+	spc(indent); printf(" LEAF np=%d\n", nparticle);
 	bhparticle * bp = bpfirst;
 	for(i = 0; i < nparticle; i++){
-	    for(int j=0;j<indent+2;j++)cerr << " ";
+	    spc(indent+2);
 	    real_particle * p = (bp+i)->get_rp();
-	    PR(p->get_index()); PRL(p->get_pos());
+	    vector x=p->get_pos();
+	    printf("index=%d, pos=%g %g %g\n", p->get_index(),
+		  x[0], x[1], x[2]);
 	}
     }else{
-	cerr << " IS _not_ LEAF ";PRL(nparticle);
+	spc(indent); printf(" NON LEAF\n");
 	for(i=0;i<8;i++){
 	    if (child[i] != NULL){
 		child[i]->dump(indent + 2);
@@ -374,6 +378,123 @@ int bhnode::sanity_check()
 	}
     }
     return iret;
+}
+
+void bhnode::setup_child_nodes(child_nodes* &c,
+			       child_nodes* cbase,
+			       bhnode* nfirst,
+			       bhparticle* pfirst)
+{
+    int i;
+    //    printf("setup at address %d\n", (int)(c-cbase));
+    auto myc = c;
+    if (isleaf){
+	// this is the lowest level node. Infomation is already set at upper
+	// level
+	return;
+    }else{
+	// This is the non-leaf node. Check the position and side
+	// length of the child cells and then check recursively..
+	//	cout << "Non Leaf " << pos  <<endl;
+	for(i=0;i<NCHILDLEN;i++){
+	    c->isleaf[i] = 1;
+	    c->nparticle[i] = 0;
+	}
+	    
+	for(i=0;i<NCHILDLEN;i++){
+	    if (child[i] != NULL){
+		c->posx[i] = child[i]->pos[0];
+		c->posy[i] = child[i]->pos[1];
+		c->posz[i] = child[i]->pos[2];
+		c->l[i] = child[i]->l;
+		c->cmposx[i] = child[i]->cmpos[0];
+		c->cmposy[i] = child[i]->cmpos[1];
+		c->cmposz[i] = child[i]->cmpos[2];
+		c->cmmass[i] = child[i]->cmmass;
+		c->cindex[i] = -1;
+		c->pindex[i] = child[i]->bpfirst -pfirst;
+		c->nparticle[i] = child[i]->nparticle;
+		c->isleaf[i] = child[i]->isleaf;
+		// if (c->isleaf[i] ){
+		//     printf("Leaf %d %g %g %g %g %d\n",
+		// 	   i, c->posx[i], c->posy[i], c->posx[i],c->cmmass[i],
+		// 	   c->nparticle[i]);
+		// }
+			   
+	    }else{
+		c->isleaf[i] = 1;
+		c->nparticle[i] = 0;
+	    }
+	}
+	for(i=0;i<NCHILDLEN;i++){
+	    if (child[i] != NULL && !child[i]->isleaf){
+		c+=1;
+		myc->cindex[i] = c-cbase;
+		child[i]->setup_child_nodes(c,cbase, nfirst,pfirst);
+	    }
+	}
+	// auto myid = myc - cbase;
+	// for(i=0;i<NCHILDLEN;i++){
+	//     if (myc->cindex[i]>0){
+	// 	printf("my=%d cindex[%d]=%d\n", (int)myid,i, (int)(myc->cindex[i]));
+	//     }
+	//     if (myc->nparticle[i]){
+	// 	printf("my=%d nparticle[%d]=%d\n", (int)myid,i, (int)(myc->nparticle[i]));
+	//     }
+	// }
+    }
+    c++;
+}
+void nbody_system::dump_child_nodes(child_nodes * cbase,
+				    int ic,
+				    bhnode* nfirst,
+				    bhparticle* pfirst,
+				    int level)
+{
+    int i;
+    child_nodes * c = cbase + ic;
+    for(i=0;i<NCHILDLEN;i++){
+	if (!c->isleaf[i] || c->nparticle[i]){
+	    for(auto is=0;is<level; is++)printf(" ");
+	    printf("ic:%d i:%d cpos: %g %g %g cm: %g %g %g m: %g l:%g id:%ld np:%ld\n",
+		   ic, i, c->posx[i], c->posy[i], c->posz[i], 
+		   c->cmposx[i], c->cmposy[i], c->cmposz[i],
+		   c->cmmass[i], c->l[i], c->cindex[i], c->nparticle[i]);
+	    if (!c->isleaf[i]){
+		dump_child_nodes(cbase, c->cindex[i], nfirst, pfirst, level+2);
+	    }
+	}
+	if (c->isleaf[i] && c->nparticle[i]){
+	    for (auto ip=0;ip<c->nparticle[i];ip++){
+		for(auto is=0;is<level+2; is++)printf(" ");
+		real_particle * p = (pfirst + c->pindex[i]+ip)->rp;
+		printf("id:%d ppos: %g %g %g  m: %g\n",
+		       p->get_index(), p->pos[0],  p->pos[1],   p->pos[2], p->mass);
+	    }
+	}
+    }
+}
+
+void nbody_system::printchild_nodes(child_nodes * cbase,
+		      int nc)
+{
+    int i;
+    printf("Print child called for %d npdes\n", nc);
+    for(i=0;i<nc;i++){
+	int sum=0;
+	auto c = cbase+i;
+	for(auto k=0;k<NCHILDLEN; k++)sum+= c->nparticle[k];
+	for(auto k=0;k<NCHILDLEN; k++){
+	    if (c->isleaf[k]==0 || c->nparticle[k]){
+		
+		printf("i:%d cpos: %g %g %g cm: %g %g %g m: %g l: %g %ld %ld %ld\n",
+		       i,c->posx[k], c->posy[k], c->posz[k], 
+		       c->cmposx[k], c->cmposy[k], c->cmposz[k],
+		       c->cmmass[k], c->l[k], c->cindex[k],
+		       c->pindex[k], c->nparticle[k]);
+	    }
+	}
+    }
 }
 
 #ifdef SPH	
@@ -481,7 +602,7 @@ inline real separation_squared0(bhnode * p1, vector & pos2)
     return r2;
 }
 
-inline real separation_squared(bhnode * p1, vector & pos2)
+inline real separation_squared_old(bhnode * p1, vector & pos2)
 {
     real r2 = 0;
     real xmin = p1->get_length()*0.5;
@@ -501,6 +622,12 @@ inline real separation_squared(bhnode * p1, vector & pos2)
     }
     
     return r2;
+}
+inline real separation_squared(bhnode * p1, vector & pos2)
+{
+    real r2 = 0;
+    auto dx = p1->get_pos()-pos2;
+    return dx*dx;
 }
 
 inline int  are_overlapped(bhnode * p1,bhnode * p2)
@@ -615,11 +742,13 @@ int check_and_set_nbl(bhnode * p1,bhnode * p2)
 }
 
 #endif
+#if 0
 static bhparticle * bp = NULL;
 static int bhpsize = 0;
 static int bnsize = 0;
 static bhnode * bn;
-void set_cm_quantities_for_default_tree()
+#endif
+void real_system::set_cm_quantities_for_default_tree()
 {
     bn->set_cm_quantities();
 }
@@ -628,14 +757,17 @@ void set_cm_quantities_for_default_tree()
 void real_system::setup_tree()
 {
     real rsize = initialize_key(n,get_particle_pointer(),bhpsize,bp);
-    cerr << "Setup tree: called\n";
+    cout << "Setup tree: called\n";
     int expected_bnsize =  (int)(bhpsize*0.6+100);
     if (bnsize < expected_bnsize){
 	if (bnsize != 0){
 	    delete [] bn;
+	    delete [] cn;
 	}
 	bnsize = expected_bnsize;
 	bn = new bhnode[bnsize];
+	//	cn = new child_nodes[bnsize/4+100];
+	cn = new child_nodes[bnsize];
     }
     for(int j = 0; j<bnsize;j++) (bn+j)->clear();
     bn->assign_root(vector(0.0), rsize*2, bp, n);
@@ -645,7 +777,7 @@ void real_system::setup_tree()
     bn->create_tree_recursive(btmp,heap_remainder,key,
 			      default_key_length, 8 );
     PR(bnsize);    PRL(heap_remainder);
-    // PRL(bn->sanity_check());
+    //    PRL(bn->sanity_check());
 }
 
 	
@@ -662,7 +794,7 @@ int sph_system::set_nnb_using_tree()
 }
 #endif
 
-void accumulate_force_from_point(vector dx, real r2, real eps2, 
+inline void accumulate_force_from_point(vector dx, real r2, real eps2, 
 				 vector & acc,
 				 real & phi,
 				 real jmass)
@@ -677,17 +809,21 @@ void accumulate_force_from_point(vector dx, real r2, real eps2,
 static real total_interactions;
 static int tree_walks;
 static int nisum;
+static double t_walk;
+static double t_calc;
 void clear_tree_counters()
 {
     total_interactions = 0;
     tree_walks = 0;
     nisum = 0;
+    t_walk = t_calc = 0;
 }
 void print_tree_counters()
 {
     real avg = total_interactions/nisum;
     PRC(nisum); PRC(tree_walks); PRC(total_interactions); PRL(avg);
     cout <<"tree_walks = " <<tree_walks << " ntaverage = " << avg << endl;
+    cout <<"walk time = " <<t_walk << " calc time = " << t_calc << endl;
 }
 
 void calculate_force_from_interaction_list(const vector & pos,
@@ -747,10 +883,17 @@ void bhnode::add_to_interaction_list(bhnode & dest_node, real theta2,
 				     int list_max,
 				     int & first_leaf)
 {
-
+#if 0
+    printf("add: nlist=%d pos, l= %g %g %g %g\n",
+	   nlist,  pos[0],pos[1],pos[2], l );
+    printf("r2*theta2= %g l*l=%g\n",
+	   separation_squared(&dest_node,cmpos),
+	   l*l);
+#endif    
     if((separation_squared(&dest_node,cmpos)*theta2 > l*l)
        && (!are_overlapped(this,&dest_node) ) ){
 	// node and position is well separated;
+	//	printf("opened\n");
 	*(pos_list+nlist) = cmpos;
 	*(mass_list+nlist) = cmmass;
 	nlist ++;
@@ -789,6 +932,362 @@ void bhnode::add_to_interaction_list(bhnode & dest_node, real theta2,
 	}
     }
 }
+template<class T>
+inline auto absfloor(T x, T f)
+{
+    if (x < 0) x= -x;
+    auto x1 = x - f;
+    if (x1 > 0){
+	return x1;
+    }else{
+	return (T) 0;
+    }
+}
+
+template<class T>
+inline int64_t absge_int64(T x, T f)
+{
+    if (x < 0) x= -x;
+    if (x >= f){
+	return (int64_t)1;
+    }else{
+	return (int64_t)0;
+    }
+}
+template<class T>
+inline bool absge(T x, T f)
+{
+    if (x < 0) x= -x;
+    return (x >= f);
+}
+
+inline void cn_opening_criterion(child_nodes *c,
+				 vector & posi,
+				 real li,
+				 real theta2,
+				 int64_t well_separated[NCHILDLEN])
+{
+    //#pragma clang loop vectorize_width(2,scalable)
+    //#pragma clang loop vectorize(enable)
+#pragma omp simd
+    for (auto j=0; j< NCHILDLEN; j++){
+	auto  xmin = (c->l[j] + li)*0.499999999999999;
+	auto xout = absge(c->posx[j] - posi[0], xmin);
+	auto yout = absge(c->posy[j] - posi[1], xmin);
+	auto zout = absge(c->posz[j] - posi[2], xmin);
+	auto dx = c->cmposx[j] -posi[0];
+	auto dy = c->cmposy[j] -posi[1];
+	auto dz = c->cmposz[j] -posi[2];
+	auto r2 = dx*dx + dy*dy+ dz*dz;
+	if (r2* theta2 > c->l[j]*c->l[j] && (xout ||yout||zout)){
+	    well_separated[j]=1;
+	} else{
+	    well_separated[j]=0;
+	}
+#if 0	
+	printf("dx = %g %g %g %g r2*theta2= %g l*l=%g\n",
+	       dx, dy, dz, r2, r2*theta2, c->l[j]*c->l[j] );
+	printf("node %d-%d pos: %g %g %g m:%g l:%g wellsep=%d\n",
+	       cnindex, j, c->posx[j], c->posy[j], c->posz[j],
+	       c->cmmass[j], c->l[j], well_separated[j]);
+#endif	
+    }
+}
+void cn_add_to_interaction_list(child_nodes * cn,
+				int cnindex,
+				bhparticle * bn,
+				bhnode & dest_node,
+
+				real theta2,
+				vector * pos_list,
+				real * mass_list,
+				int & nlist,
+				int list_max,
+				int & first_leaf)
+{
+    bool well_separated[NCHILDLEN];
+    vector posi = dest_node.get_pos();
+    real   li   = dest_node.get_length();
+    bhparticle* b = dest_node.bpfirst;
+    auto c = cn+cnindex;
+#if 0    
+    printf("cn_add: cnindex=%d nlist=%d pos, l= %g %g %g %g\n",
+	   cnindex, nlist, posi[0],posi[1],posi[2], li );
+#endif
+
+    //    cn_opening_criterion(c,posi,li,theta2,well_separated);
+#pragma clang loop vectorize(enable)
+    for (auto j=0; j< NCHILDLEN; j++){
+	auto  xmin = (c->l[j] + li)*0.499999999999999;
+	auto xout = absge(c->posx[j] - posi[0], xmin);
+	auto yout = absge(c->posy[j] - posi[1], xmin);
+	auto zout = absge(c->posz[j] - posi[2], xmin);
+	auto dx = c->cmposx[j] -posi[0];
+	auto dy = c->cmposy[j] -posi[1];
+	auto dz = c->cmposz[j] -posi[2];
+	auto r2 = dx*dx + dy*dy+ dz*dz;
+	// if (r2* theta2 > c->l[j]*c->l[j] && (xout ||yout||zout)){
+	//     well_separated[j]=1;
+	// } else{
+	//     well_separated[j]=0;
+	// }
+	well_separated[j]=(r2* theta2 > c->l[j]*c->l[j] && (xout ||yout||zout));
+    }
+    for (auto j=0; j< NCHILDLEN; j++){
+	if (well_separated[j]){
+	    if (!c->isleaf[j] || c->nparticle[j]){
+		*(pos_list+nlist) = vector(c->cmposx[j],
+					   c->cmposy[j],
+					   c->cmposz[j]);
+		*(mass_list+nlist) = c->cmmass[j];
+		nlist ++;
+		if (nlist > list_max){
+		    cerr << "List length exceeded\n";
+		    exit(1);
+		}
+	    }
+	}else{
+	    // need to see if current node is this node.
+	    bool self_interaction = false;
+	    bhparticle * bp = bn + c->pindex[j];
+	    //	    if ((b == bp)&&
+	    //		li == c->l[j]){
+	    if (c->posx[j]== posi[0]&&
+		c->posy[j]== posi[1]&&
+		c->posz[j]== posi[2] &&
+		c->nparticle[j]){
+		first_leaf = nlist;
+		self_interaction= true;
+	    }
+	    if (self_interaction || c->isleaf[j]){
+		for(auto i = 0; i < c->nparticle[j]; i++){
+		    *(pos_list+nlist) = (bp+i)->get_rp()->get_pos();
+		    
+		    *(mass_list+nlist) =(bp+i)->get_rp()->get_mass();
+		    nlist ++;
+		    if (nlist > list_max){
+			cerr << "List length exceeded\n";
+			exit(1);
+		    }
+		}
+	    }else{
+		cn_add_to_interaction_list(cn,c->cindex[j],bn,
+					   dest_node, theta2,
+					   pos_list, mass_list,
+					   nlist, list_max,
+					   first_leaf);
+	    }
+	}
+    }
+}
+
+void cn_bfs_add_to_interaction_list_step(child_nodes * cn,
+					 int * index_list,
+					 int * newindex,
+					 int & nnodes,
+					 bhparticle * bn,
+					 bhnode & dest_node,
+					 
+					 real theta2,
+					 vector * pos_list,
+					 real * mass_list,
+					 int & nlist,
+					 int list_max,
+					 int & first_leaf)
+{
+    //    printf("cn bfs step called with nnodes=%d\n", nnodes);
+    int64_t well_separated[NCHILDLEN*nnodes];
+    vector posi = dest_node.get_pos();
+    real   li   = dest_node.get_length();
+    bhparticle* b = dest_node.bpfirst;
+    int newnnodes = 0;
+    //#pragma fj loop unroll_count(8)    
+    for(auto jn=0; jn<nnodes; jn++){
+	auto c = cn+ index_list[jn];
+	//	cn_opening_criterion(c,posi,li,theta2,well_separated+jn*NCHILDLEN);
+	auto j8 = jn*NCHILDLEN;
+#pragma omp simd
+	//#pragma clang loop vectorize_width(8,scalable)
+	//#pragma clang loop vectorize(enable)
+	for (auto j=0; j< NCHILDLEN; j++){
+	    auto jf = j8+j;
+	    auto  xmin = (c->l[j] + li)*0.499999999999999;
+	    auto xout = absge(c->posx[j] - posi[0], xmin);
+	    auto yout = absge(c->posy[j] - posi[1], xmin);
+	    auto zout = absge(c->posz[j] - posi[2], xmin);
+	    auto dx = c->cmposx[j] -posi[0];
+	    auto dy = c->cmposy[j] -posi[1];
+	    auto dz = c->cmposz[j] -posi[2];
+	    auto r2 = dx*dx + dy*dy+ dz*dz;
+	    well_separated[jf]=(r2* theta2 > c->l[j]*c->l[j] && (xout ||yout||zout));
+	}
+    }
+    
+    for (auto j=0; j< NCHILDLEN*nnodes; j++){
+	auto jn = j>>3;
+	auto jc = j & (NCHILDLEN-1);
+	auto c = cn+ index_list[jn];	
+	if (well_separated[j]){
+	    if (!c->isleaf[jc] || c->nparticle[jc]){
+		*(pos_list+nlist) = vector(c->cmposx[jc],
+					   c->cmposy[jc],
+					   c->cmposz[jc]);
+		*(mass_list+nlist) = c->cmmass[jc];
+		nlist ++;
+		if (nlist > list_max){
+		    cerr << "List length exceeded\n";
+		    exit(1);
+		}
+	    }
+	}else{
+	    // need to see if current node is this node.
+	    bool self_interaction = false;
+	    bhparticle * bp = bn + c->pindex[jc];
+	    //	    if ((b == bp)&&
+	    //		li == c->l[j]){
+	    if (c->posx[jc]== posi[0]&&
+		c->posy[jc]== posi[1]&&
+		c->posz[jc]== posi[2] &&
+		c->nparticle[jc]){
+		first_leaf = nlist;
+		self_interaction= true;
+	    }
+	    if (self_interaction || c->isleaf[jc]){
+		for(auto i = 0; i < c->nparticle[jc]; i++){
+		    *(pos_list+nlist+i) = (bp+i)->get_rp()->get_pos();
+		    *(mass_list+nlist+i) =(bp+i)->get_rp()->get_mass();
+
+		}
+		nlist +=c->nparticle[jc] ;
+		if (nlist > list_max){
+		    cerr << "List length exceeded\n";
+		    exit(1);
+		}
+	    }else{
+		newindex[newnnodes]=c->cindex[jc];
+		newnnodes ++;
+	    }
+	}
+    }
+    nnodes=newnnodes;
+    for(int i=0;i<newnnodes; i++)index_list[i] = newindex[i];
+
+}
+
+void cn_bfs_add_to_interaction_list(child_nodes * cn,
+				bhparticle * bn,
+				bhnode & dest_node,
+
+				real theta2,
+				vector * pos_list,
+				real * mass_list,
+				int & nlist,
+				int list_max,
+				int & first_leaf)
+{
+    int nnodes=1;
+    int index_list[list_max];
+    int newindex[list_max];
+    index_list[0] = 0;
+    while (nnodes){
+	cn_bfs_add_to_interaction_list_step(cn, index_list,  newindex,  nnodes,
+					    bn, dest_node, theta2,
+					    pos_list, mass_list, nlist,
+					    list_max,first_leaf);
+    }
+}
+
+
+void bhnode::bfs_add_to_interaction_list_step(bhnode * nodes,  real theta2,
+					      int * index_list,
+					      int * newindex,
+					      int & nnodes,
+					      vector * pos_list,
+					      real * mass_list,
+					      int & nlist,
+					      int list_max,
+					      int & first_leaf)
+{
+    int next_n=0;
+    //    fprintf(stderr, "step called with nnodes= %d\n", nnodes);
+    for(int i=0; i< nnodes; i++){
+	//	fprintf(stderr, "i= %d\n", i);
+	if (index_list[i] <0) continue;
+	auto b = nodes+index_list[i];
+	//	fprintf(stderr, "index= %d\n", index_list[i]);
+	//	b->dump();
+	auto l2 = b->l*b->l;
+	if((separation_squared(this,b->cmpos)*theta2 > l2)
+	   && (!are_overlapped(b,this) ) ){
+	    // node and position is well separated;
+	    //	    fprintf(stderr, "node %d added to list\n", index_list[i]);
+	    *(pos_list+nlist) = b->cmpos;
+	    *(mass_list+nlist) = b->cmmass;
+	    nlist ++;
+	    if (nlist > list_max){
+		cerr << "List length exceeded\n";
+		exit(1);
+	    }
+	}else{
+	    int i;
+	    if (b->isleaf || (b == (this))){
+		if (b == (this)){
+		    // adding the particles in the node itself
+		    first_leaf = nlist;
+		}
+		bhparticle * bp = b->bpfirst;
+		for(auto ii = 0; ii < b->nparticle; ii++){
+ //		    fprintf(stderr, "ii = %d  nlist= %d\n", ii, nlist);
+		    *(pos_list+nlist) = (bp+ii)->get_rp()->get_pos();
+		    
+		    *(mass_list+nlist) =(bp+ii)->get_rp()->get_mass();
+		    nlist ++;
+		    if (nlist > list_max){
+			cerr << "List length exceeded\n";
+			exit(1);
+		    }
+		}
+	    }else{
+		for(i=0;i<8;i++){
+		    if (b->child[i] != NULL){
+			newindex[next_n] = b->child[i] -nodes;
+		    }else{
+			newindex[next_n] = -1;
+		    }
+			
+			// fprintf(stderr, "i= %d %d  newindex=%d\n",
+			// 	i, next_n, newindex[next_n]);
+		    next_n ++;
+		}
+	    }
+	}
+    }
+    nnodes = next_n;
+    for(int i=0;i<next_n; i++)index_list[i] = newindex[i];
+}
+
+void bhnode::bfs_add_to_interaction_list(bhnode * nodes,  real theta2,
+					 bhnode * top,
+					 vector * pos_list,
+					 real * mass_list,
+					 int & nlist,
+					 int list_max,
+					 int & first_leaf)
+{
+    int nnodes=1;
+    int index_list[list_max];
+    int newindex[list_max];
+    index_list[0] = top - nodes;
+    //    fprintf(stderr,"enter BFS_add_to_interaction_list\n");
+    //    dump();
+    while (nnodes){
+	bfs_add_to_interaction_list_step(nodes, theta2, index_list, newindex,
+					 nnodes,
+					 pos_list, mass_list, nlist,list_max,
+					 first_leaf);
+    }
+}
+
 
 void bhnode::add_to_neighbour_list(bhnode & dest_node, real cutoff,
 				     vector * pos_list,
@@ -823,19 +1322,23 @@ void bhnode::add_to_neighbour_list(bhnode & dest_node, real cutoff,
 		    }
 		}
 	    }else{
-		for(i = 0; i < nparticle; i++){
-		    // need to judge distance here
-		    if (are_overlapped_with_cutoff(&dest_node, bp+i, cutoff)){
-			*(pos_list+nlist) = (bp+i)->get_rp()->get_pos();
+		// for(i = 0; i < nparticle; i++){
+		//     // need to judge distance here
+		//     if (are_overlapped_with_cutoff(&dest_node, bp+i, cutoff)){
+		// 	*(pos_list+nlist) = (bp+i)->get_rp()->get_pos();
 			
-			*(mass_list+nlist) =(bp+i)->get_rp()->get_mass();
-			nlist ++;
-			if (nlist > list_max){
-			    cerr << "List length exceeded\n";
-			    exit(1);
-			}
-		    }
-		}
+		// 	*(mass_list+nlist) =(bp+i)->get_rp()->get_mass();
+		// 	nlist ++;
+		// 	if (nlist > list_max){
+		// 	    cerr << "List length exceeded\n";
+		// 	    exit(1);
+		// 	}
+		//     }
+		// }
+		add_to_neighbour_list_leafcell(dest_node, cutoff,
+					       pos_list, mass_list,
+					       nlist, list_max,
+					       first_leaf);
 	    }
 	}else{
 	    for(i=0;i<8;i++){
@@ -849,6 +1352,100 @@ void bhnode::add_to_neighbour_list(bhnode & dest_node, real cutoff,
 	}
     }
 }
+
+void bhnode::add_to_neighbour_list_leafcell(bhnode & dest_node, real cutoff,
+				     vector * pos_list,
+				     real * mass_list,
+				     int & nlist,
+				     int list_max,
+				     int & first_leaf)
+{
+    int i;
+    //    cerr << "lefcell add called with nparticle=" << nparticle <<endl;
+    bhparticle * bp = bpfirst;
+    if (nlist +nparticle> list_max){
+	cerr << "List length exceeded\n";
+	exit(1);
+    }
+    for(i = 0; i < nparticle; i++){
+	// need to judge distance here
+	if (are_overlapped_with_cutoff(&dest_node, bp+i, cutoff)){
+	    *(pos_list+nlist) = (bp+i)->get_rp()->get_pos();
+	    
+	    *(mass_list+nlist) =(bp+i)->get_rp()->get_mass();
+	    nlist ++;
+	}
+    }
+}
+
+void bhnode::add_to_neighbour_list_leafcell2(bhnode & dest_node,
+					     real cutoff,
+					     vector * pos_list,
+					     real * mass_list,
+					     int & nlist,
+					     int list_max,
+					     int & first_leaf)
+{
+    int i;
+    //    cerr << "lefcell add called with nparticle=" << nparticle <<endl;
+    bhparticle * bp = bpfirst;
+    if (nlist +nparticle> list_max){
+	cerr << "List length exceeded\n";
+	exit(1);
+    }
+    real xmin = dest_node.get_length()*0.4999999999999999+cutoff;
+    real xmin2 =dest_node.get_length()*0.4999999999999999;
+    vector dpos = dest_node.get_pos();
+#define LEAFMAX 256    
+    real xa[LEAFMAX];
+    real ya[LEAFMAX];
+    real za[LEAFMAX];
+    int  flags[LEAFMAX];
+#pragma omp simd    
+    for(i = 0; i < nparticle; i++){
+	vector ppos = (bp+i)->get_rp()->get_pos();
+	xa[i] = ppos[0];
+	ya[i] = ppos[1];
+	za[i] = ppos[2];
+	flags[i]=1;
+    }
+#if 1    
+#pragma omp simd    
+    for(i = 0; i < nparticle; i++){
+	real dx =xa[i]-dpos[0];
+	real dy =ya[i]-dpos[1];
+	real dz =za[i]-dpos[2];
+	real r2sum = 0;
+	real d = fabs(dx) - xmin2;
+	if (d > 0) r2sum += d*d;
+	d = fabs(dy) - xmin2;
+	if (d > 0) r2sum += d*d;
+	d = fabs(dz) - xmin2;
+	if (d > 0) r2sum += d*d;
+	if (r2sum <	cutoff*cutoff) {
+	    flags[i]=1;
+	}
+    }
+    for(i = 0; i < nparticle; i++){
+	if (flags[i]){
+	    
+	    *(pos_list+nlist) = (bp+i)->get_rp()->get_pos();
+	    
+	    *(mass_list+nlist) =(bp+i)->get_rp()->get_mass();
+	    nlist ++;
+	}
+    }
+#else    
+    for(i = 0; i < nparticle; i++){
+	*(pos_list+nlist) = (bp+i)->get_rp()->get_pos();
+	
+	*(mass_list+nlist) =(bp+i)->get_rp()->get_mass();
+	    nlist ++;
+    }
+#endif    
+    //    nlist += nparticle;
+}
+
 
 
 
@@ -891,27 +1488,30 @@ void calculate_force_from_interaction_list_using_grape4(vector * pos_list, real 
 #endif
 
 void bhnode::evaluate_gravity_using_tree_and_list(bhnode & source_node,
+						  child_nodes * cn,
+						  bhparticle * bn,
 						  real theta2,
 						  real eps2,
 						  int ncrit)
 {
-    const int list_max = 40000;
+    const int list_max = LISTMAX;
     static real mass_list[list_max];
     static vector pos_list[list_max];
     real epsinv = 1.0/sqrt(eps2);
-#if 1
+
     static vector * acc_list = NULL;
     static real * phi_list = NULL;
     if (acc_list == NULL){
 	acc_list = new vector[ncrit + 100];
 	phi_list = new real[ncrit + 100];
     }
-#endif
+
     //    PR(pos); PR(nparticle); PRL(isleaf);
     if((nparticle > ncrit) && (isleaf==0)){
 	for(int i=0;i<8;i++){
 	    if (child[i] != NULL){
 		child[i]->evaluate_gravity_using_tree_and_list(source_node,
+							       cn, bn,
 							       theta2,
 							       eps2,
 							       ncrit);
@@ -923,22 +1523,59 @@ void bhnode::evaluate_gravity_using_tree_and_list(bhnode & source_node,
 	//
 	int list_length = 0;
 	int first_leaf = -1;
-	source_node.add_to_interaction_list(*this,  theta2,
+	double toff = NbodyLib::GetWtime();
+#if defined(DFS_TREE_WALK)
+	source_node.add_to_interaction_list(*this, theta2,
 					    pos_list,
 					    mass_list,
 					    list_length,
 					    list_max,
 					    first_leaf);
+#elif defined(SIMD_DFS_TREE_WALK)
+	cn_add_to_interaction_list(cn, 0, bn,
+				   *this, theta2,
+				   pos_list,
+				   mass_list,
+				   list_length,
+				   list_max,
+				   first_leaf);
+#elif defined(SIMD_TREE_WALK)
+	cn_bfs_add_to_interaction_list(cn,  bn,
+				       *this, theta2,
+				       pos_list,
+				       mass_list,
+				       list_length,
+				       list_max,
+				       first_leaf);
+#else
+	bfs_add_to_interaction_list(&source_node,  theta2, &source_node,
+				    pos_list,  mass_list,
+				    list_length,
+				    list_max,
+				    first_leaf);
+#endif	
 	if (first_leaf == -1){
 	    cerr << "evaluate_gravity: impossible error \n";
-	    cerr << "failed to find the node in the tree \n";
+	    cerr << "failed toC find the node in the tree \n";
 	    exit(1);
 	}
+	
 	bhparticle * bp = bpfirst;
+
+#if 0
+	printf("nparticle= %d nlist= %d fl= %d\n", nparticle, list_length, first_leaf);
+	for(auto j=0;j<list_length; j++){
+	    printf("%d: %g %g %g %g\n",j, pos_list[j][0],
+		   pos_list[j][1],pos_list[j][2], mass_list[j]);
+	}
+#endif	
 #ifndef HARP3
 	tree_walks ++;
 	nisum += nparticle;
 	total_interactions += ((real)nparticle)*list_length;
+	double toff2=NbodyLib::GetWtime();
+	t_walk += toff2  - toff;
+#pragma omp parallel for
 	for(int i = 0; i < nparticle; i++){
 	    real_particle * p = (bp+i)->get_rp();
 	    vector acc;
@@ -948,6 +1585,8 @@ void bhnode::evaluate_gravity_using_tree_and_list(bhnode & source_node,
 	    p->set_acc_gravity(acc);
 	    p->set_phi_gravity(phi + p->get_mass()*epsinv);
 	}
+	double toff3=NbodyLib::GetWtime();
+	t_calc += toff3  - toff2;
 #else
 	calculate_force_from_interaction_list_using_grape4(pos_list, mass_list,list_length, first_leaf,
 							   nparticle, eps2, acc_list, phi_list);
@@ -959,6 +1598,7 @@ void bhnode::evaluate_gravity_using_tree_and_list(bhnode & source_node,
 #endif	
     }
 }
+
 
 void bhnode::make_neighbour_list_using_tree(bhnode & source_node,
 					    real cutoff,
@@ -1024,7 +1664,7 @@ void bhnode::make_neighbour_list_using_dual_treewalk(bhnode & source_node,
 	return;
     }
     if(nparticle > ncrit){
-	if (source_node.is_leaf()|source_node.nparticle < nplimit){
+	if (source_node.is_leaf()||source_node.nparticle < nplimit){
 	    dest_down = 1;
 	}else{
 	    if (srclevel < destlevel){
@@ -1118,46 +1758,47 @@ void bhnode::update_tree_counters()
     }
 }
 
-void evaluate_gravity_using_default_tree_and_list(real theta2,
+void real_system::evaluate_gravity_using_default_tree_and_list(real theta2,
 					  real eps2,
 					  int ncrit)
 {
-    bn->evaluate_gravity_using_tree_and_list(*bn, theta2,eps2, ncrit);
+    //    bn->dump();
+    bn->evaluate_gravity_using_tree_and_list(*bn, cn, bp,  theta2,eps2, ncrit);
 }
 
-void make_neighbour_list_using_default_tree(real cutoff,
+void real_system::make_neighbour_list_using_default_tree(real cutoff,
 					    int ncrit,int nctree)
 {
-    cerr << "Enter make neighbour list , cpu = " <<cpusec() << endl;
-    double tstart = cpusec();
+    cerr << "Enter make neighbour list , cpu = " <<NbodyLib::GetWtime() << endl;
+    double tstart = NbodyLib::GetWtime();
     bn->set_nplimit(nctree);
     bn->make_neighbour_list_using_tree(*bn, cutoff, ncrit);
-    cerr << "Exit make neighbour list , dt = " <<cpusec()-tstart << endl;
+    cerr << "Exit make neighbour list , dt = " <<NbodyLib::GetWtime()-tstart << endl;
     //    bn->dump_interaction_list();
 }
-void make_neighbour_list_using_default_tree_and_dual_walk(real cutoff,
+void real_system::make_neighbour_list_using_default_tree_and_dual_walk(real cutoff,
 							  int ncrit,
 							  int nctree)
 {
     clear_tree_counters();
     bn->set_nplimit(nctree);
     bn->clear_interaction_list();
-    cerr << "Enter make neighbour list DT, cpu = " <<cpusec() << endl;
-    double tstart = cpusec();
+    cerr << "Enter make neighbour list DT, cpu = " <<NbodyLib::GetWtime() << endl;
+    double tstart = NbodyLib::GetWtime();
     bn->make_neighbour_list_using_dual_treewalk(*bn, cutoff, ncrit,0,0);
-    cerr << "Exit make neighbour list DT, dt = " <<cpusec()-tstart << endl;
+    cerr << "Exit make neighbour list DT, dt = " <<NbodyLib::GetWtime()-tstart << endl;
     //    bn->dump_interaction_list();
     bn->update_tree_counters();
 }
 
-void real_particle::calculate_gravity_using_tree(real eps2, real theta2)
-{
-    acc_gravity = 0;
-    phi_gravity = mass/sqrt(eps2);
-    bn->accumulate_force_from_tree(pos,eps2,theta2,
-				  acc_gravity, phi_gravity);
-    nisum += 1;
-}
+// void real_particle::calculate_gravity_using_tree(real eps2, real theta2)
+// {
+//     acc_gravity = 0;
+//     phi_gravity = mass/sqrt(eps2);
+//     bn->accumulate_force_from_tree(pos,eps2,theta2,
+// 				  acc_gravity, phi_gravity);
+//     nisum += 1;
+// }
 
 
 #ifdef TESTXXX

@@ -34,11 +34,18 @@
 #include  <stdlib.h>
 #include  <math.h>
 #include  <iostream>
-
+#include "utils.hpp"
 using namespace std;
 #define real double
 #include "vector.h"
+
 #include "nbody_particle.h"
+
+class child_nodes;
+#include "nbody_system.h"
+
+#include "BHtree.C"
+
 #define NBODY
 
 #define NBODY
@@ -50,6 +57,7 @@ typedef nbody_system real_system;
 typedef sph_particle real_particle;
 typedef sph_system real_system;
 #endif
+
 
 #ifdef TREE
 void set_cm_quantities_for_default_tree();
@@ -79,68 +87,54 @@ void real_system::calculate_gravity()
 }
 #endif
 
-void evaluate_gravity_using_default_tree_and_list(real theta2,
-					  real eps2,
-					  int ncrit);
-void make_neighbour_list_using_default_tree(real cutoff,
-					    int ncrit,
-					    int nctree);
-void make_neighbour_list_using_default_tree_and_dual_walk(real cutoff,
-							  int ncrit,
-							  int nctree);
 
 void real_system::calculate_uncorrected_gravity()
 {
-#ifndef TREE    
-#    ifndef HARP3    
-    calculate_uncorrected_gravity_direct();
-#    else
-    calculate_uncorrected_gravity_using_grape4();
-#    endif
-#else
-    cerr << "Call setup tree, cpu = " <<cpusec() << endl;
+    cerr << "Call setup tree, cpu = " <<NbodyLib::GetWtime() << endl;
     setup_tree();
-    cerr << "Call set cm, cpu = " <<cpusec() << endl;
+    cerr << "Call set cm, cpu = " <<NbodyLib::GetWtime() << endl;
     set_cm_quantities_for_default_tree();
-    cerr << "Call evaluate_gravity, cpu = " <<cpusec() << endl;
+#if 1    
+    //    bn->dump();
+    child_nodes * c = cn;
+    //    printf("setup child nodes called\n");
+    bn->setup_child_nodes(c, c, bn, bp);
+    //    printchild_nodes(cn, bnsize);
+    //    dump_child_nodes(cn, 0, bn, bp);
+#endif    
+    cerr << "Call evaluate_gravity, cpu = " <<NbodyLib::GetWtime() << endl;
     clear_tree_counters();
-#    if 0
-    apply_vf(&real_particle::clear_acc_phi_gravity);
-    apply_vf(&real_particle::calculate_gravity_using_tree,eps2_for_gravity, theta_for_tree*theta_for_tree);
-#    else
-    evaluate_gravity_using_default_tree_and_list(theta_for_tree*theta_for_tree, eps2_for_gravity,ncrit_for_tree);
-#    endif
-#endif
+   evaluate_gravity_using_default_tree_and_list(theta_for_tree*theta_for_tree, eps2_for_gravity,ncrit_for_tree);
     
     print_tree_counters();
-    cerr << "Exit evaluate_gravity, cpu = " <<cpusec() << endl;
+    cerr << "Exit evaluate_gravity, cpu = " <<NbodyLib::GetWtime() << endl;
     
 }
 
 void real_system::calculate_neighbour()
 {
 
-    cerr << "Call setup tree, cpu = " <<cpusec() << endl;
+    cerr << "Call setup tree, cpu = " <<NbodyLib::GetWtime() << endl;
     setup_tree();
-    cerr << "Call set cm, cpu = " <<cpusec() << endl;
+    cerr << "Call set cm, cpu = " <<NbodyLib::GetWtime() << endl;
     set_cm_quantities_for_default_tree();
-    cerr << "Call calculateevaluate_gravity, cpu = " <<cpusec() << endl;
+    cerr << "Call calculateevaluate_gravity, cpu = " <<NbodyLib::GetWtime() << endl;
     clear_tree_counters();
     PRL(theta_for_tree);
     make_neighbour_list_using_default_tree(theta_for_tree, ncrit_for_tree,
 					   nctree);
     print_tree_counters();
-    cerr << "Exit make neighbour list, cpu = " <<cpusec() << endl;
+    cerr << "Exit make neighbour list, cpu = " <<NbodyLib::GetWtime() << endl;
     
 }
 void real_system::calculate_neighbour_dualtreewalk()
 {
 
-    cerr << "Call setup tree, cpu = " <<cpusec() << endl;
+    cerr << "Call setup tree, cpu = " <<NbodyLib::GetWtime() << endl;
     setup_tree();
-    cerr << "Call set cm, cpu = " <<cpusec() << endl;
+    cerr << "Call set cm, cpu = " <<NbodyLib::GetWtime() << endl;
     set_cm_quantities_for_default_tree();
-    cerr << "Call calculateevaluate_gravity, cpu = " <<cpusec() << endl;
+    cerr << "Call calculateevaluate_gravity, cpu = " <<NbodyLib::GetWtime() << endl;
     clear_tree_counters();
     PRL(theta_for_tree);
     make_neighbour_list_using_default_tree_and_dual_walk(theta_for_tree,
@@ -148,7 +142,7 @@ void real_system::calculate_neighbour_dualtreewalk()
 							 nctree);
     
     print_tree_counters();
-    cerr << "Exit make neighbour list, cpu = " <<cpusec() << endl;
+    cerr << "Exit make neighbour list, cpu = " <<NbodyLib::GetWtime() << endl;
     
 }
 

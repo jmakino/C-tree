@@ -3,12 +3,18 @@ WEBDIR = /usr2/makino/WWW/softwares/C++tree
 PGPLOT_DIR = /usr/local/pgplot
 #PGPLOT_DIR = /data6/makino/PDS/pgplot_linux/pgplot
 PGINCLUDE =  -I$(PGPLOT_DIR)
-CFLAGS = $(FLOAT_OPTIONS) -DREAL=double -O4 -ffast-math -funroll-loops # -pg -p
+CFLAGS = $(FLOAT_OPTIONS) -DREAL=double -O4 -ffast-math -funroll-loops #-g  # -p
 
+OPTFLAGS = -march=skylake-avx512 -fopenmp -ftree-vectorize -fopt-info-vec
+CLANGOPTFLAGS =  -fopenmp -ftree-vectorize
+#OPTFLAGS = -march=skylake
 #
 # Add -DNOGRAPHICS for installation without PGPLOT
 #CPPFLAGS =   -DTREE $(PGINCLUDE) -p $(FLOAT_OPTIONS) -O4   -ffast-math -funroll-loops
-CPPFLAGS = -DNOGRAPHICS -DTREE $(PGINCLUDE)  $(FLOAT_OPTIONS) -O4 -ffast-math -funroll-loops#  -pg -p
+CPPFLAGS = $(OPTFLAGS) -DNOGRAPHICS -DTREE $(PGINCLUDE)  $(FLOAT_OPTIONS) -O4 -ffast-math -funroll-loops  #   -p
+CLANGFLAGS = $(CLANGOPTFLAGS) -DNOGRAPHICS -DTREE $(PGINCLUDE)  $(FLOAT_OPTIONS) -O4 -ffast-math -funroll-loops  #  -pg -p
+#CLANGFLAGS += -Rpass=.*
+CLANGFLAGS += -Rpass=sve-loop-vectorize -Rpass-analysis=inline -Rpass-analysis=loop-vectorize
 #PGLIB     =  -L$(PGPLOT_DIR) -g3 -O4 -lcpgplot -lpgplot -lX11 -lUfor -lfor -lFutil -lm -lprof1 -lpdf
 PGLIB      = 
 #PGLIB     =  -L$(PGPLOT_DIR) -lcpgplot -lpgplot -lm  -L/usr/X11R6/lib -lX11 -lg2c
@@ -20,7 +26,8 @@ G6DIR = ../g6hib-x86
 
 H3LIB = -L/usr2/makino/src/harp3board -lharp3  -lrt -lm 
 
-LIBOBJS = pgetopt.o gravity.o BHtree.o second.o
+#LIBOBJS = pgetopt.o gravity.o BHtree.o second.o
+LIBOBJS = pgetopt.o gravity.o second.o
 LIBOBJSE = pgetopt.o  BHtree.o second.o
 LIBOBJSG4 = pgetopt.o  gravity_g4.o BHtree_g4.o second.o
 LIBOBJSG6 = pgetopt.o  gravity_g6.o BHtree_g6.o second.o
@@ -45,7 +52,7 @@ A64FLAGS      =   -DNOGRAPHICS -DTREE -Ksimd=2   -Kfast -O3\
 A64CCOMPILER   = FCC
 
 FILESTOSENDTOFX700 = $(EXPORT_FILES) $(ADDITIONAL_FILES)
-OTHERSRCS =  pgetopt.cc gravity.cc BHtree.cc
+OTHERSRCS =  pgetopt.C gravity.C
 OTHEROBJS =  second.o
 
 pgetopt.cc: pgetopt.C
@@ -69,7 +76,7 @@ export:
 export.tar.gz: $(EXPORT_FILES)
 	tar cvf export.tar  $(EXPORT_FILES)
 	gzip export.tar 
-gravity.o : gravity.C  nbody_particle.h
+gravity.o : gravity.C  nbody_particle.h BHtree.h BHtree.C
 	g++  $(CPPFLAGS)  -c gravity.C
 gravity_g4.o : gravity.C  nbody_particle.h
 	g++  -DHARP3 $(CPPFLAGS)  -c gravity.C
@@ -84,8 +91,24 @@ nbody.o : nbody.C  nbody_particle.h
 	g++  -c    $(CPPFLAGS)  nbody.C 
 nbody : nbody.C  nbody_particle.h $(LIBOBJS)
 	g++  -DEVOLVE    $(CPPFLAGS) -o nbody nbody.C $(LIBOBJS) $(PGLIB)
+nbody.dfs : nbody.C  nbody_particle.h BHtree.h nbody_system.h BHtree.C $(OTHERSRCS) $(OTHEROBJS) 
+	g++  -DEVOLVE -DDFS_TREE_WALK   $(CPPFLAGS) -o nbody.dfs nbody.C  $(OTHERSRCS) $(OTHEROBJS)   $(PGLIB)
+nbody.dfs.a64fx : nbody.C  nbody_particle.h BHtree.h nbody_system.h BHtree.C $(OTHERSRCS) $(OTHEROBJS) 
+	FCC -Nclang  -DEVOLVE -DDFS_TREE_WALK   $(CLANGFLAGS) -o nbody.dfs.a64fx nbody.C  $(OTHERSRCS) $(OTHEROBJS)   $(PGLIB)
+nbody.st : nbody.C  nbody_particle.h BHtree.h nbody_system.h BHtree.C $(OTHERSRCS) $(OTHEROBJS) 
+	g++  -DEVOLVE -DSIMD_TREE_WALK   $(CPPFLAGS) -o nbody.st nbody.C  $(OTHERSRCS) $(OTHEROBJS)   $(PGLIB)
+nbody.stdfs : nbody.C  nbody_particle.h BHtree.h nbody_system.h BHtree.C $(OTHERSRCS) $(OTHEROBJS) 
+	g++  -DEVOLVE -DSIMD_DFS_TREE_WALK   $(CPPFLAGS) -o nbody.stdfs nbody.C  $(OTHERSRCS) $(OTHEROBJS)   $(PGLIB)
+nbody.st.a64fx  : nbody.C  nbody_particle.h BHtree.h nbody_system.h BHtree.C $(OTHERSRCS) $(OTHEROBJS) 
+	FCC -Nclang  -DEVOLVE -DSIMD_TREE_WALK   $(CLANGFLAGS) -o nbody.st.a64fx nbody.C  $(OTHERSRCS) $(OTHEROBJS)   $(PGLIB)
+nbody.stdfs.a64fx  : nbody.C  nbody_particle.h BHtree.h nbody_system.h BHtree.C $(OTHERSRCS) $(OTHEROBJS) 
+	FCC -Nclang  -DEVOLVE -DSIMD_DFS_TREE_WALK   $(CLANGFLAGS) -o nbody.stdfs.a64fx nbody.C  $(OTHERSRCS) $(OTHEROBJS)   $(PGLIB)
+nbody.a64fx  : nbody.C  nbody_particle.h BHtree.h nbody_system.h BHtree.C $(OTHERSRCS) $(OTHEROBJS) 
+	FCC -Nclang  -DEVOLVE   $(CLANGFLAGS) -o nbody.a64fx nbody.C  $(OTHERSRCS) $(OTHEROBJS)   $(PGLIB)
 nbtest : nbtest.C  nbody_particle.h $(LIBOBJS)
 	g++  -DEVOLVE    $(CPPFLAGS) -o nbtest nbtest.C $(LIBOBJS) $(PGLIB)
+nbtest.clang : nbtest.C  nbody_particle.h $(OTHERSRCS)  $(OTHEROBJS)
+	FCC -Nclang  -DEVOLVE    $(CLANGFLAGS) -o nbtest.clang nbtest.C  $(OTHERSRCS)  $(OTHEROBJS)
 nbtest.a64fx  : nbtest.cc  nbody_particle.h $(OTHERSRCS)  $(OTHEROBJS) Makefile
 	$(A64CCOMPILER)  -DEVOLVE    $(A64FLAGS) nbtest.cc   $(OTHERSRCS)  $(OTHEROBJS)   -o nbtest.a64fx 
 nbody_ext : nbody.C external.C gravity.C  nbody_particle.h $(LIBOBJSE)

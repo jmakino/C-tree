@@ -1,5 +1,4 @@
-#ifndef  NBODY_PARTICLE_H
-#  define   NBODY_PARTICLE_H
+#pragma once
 /*-----------------------------------------------------------------------------
  *  nbody-particle : basic class for simple nbody implementation
  *  J. Makino 1998/11/29
@@ -15,7 +14,9 @@
 
 class nbody_particle
     {
-    private:
+
+
+    public:
         vector pos;
 	vector vel;
 	vector acc_gravity;
@@ -23,8 +24,6 @@ class nbody_particle
 	real phi_gravity_external;
 	real mass;
 	int index;
-
-    public:
 	nbody_particle(){
 	    pos = 0.0;
 	    vel = 0.0;
@@ -98,72 +97,3 @@ typedef void (nbody_particle::*nbody_RF_ptr)(real);     // void member function
 						    // pointer with real arg
 typedef void (nbody_particle::*nbody_RRF_ptr)(real,real);     // void member function
 						    // pointer with two real args
-class nbody_system
-    {
-    private:
-
-
-	int nsize;
-	nbody_particle * pb;
-
-    public:
-	int n;
-	real time;
-	real timestep;
-	real eps2_for_gravity;
-	int use_self_gravity;
-	vector pos;
-	vector vel;
-	real   mass;
-	real plot_xmax;
-	real theta_for_tree;
-	int ncrit_for_tree;
-	int nctree;
-	    
-
-	nbody_system(){
-	    n = 0;
-	    nsize = 0;
-	    time = 0;
-	    timestep = 0;
-	    pb = NULL;
-	    }
- 
-	void calculate_uncorrected_gravity();
-	void calculate_uncorrected_gravity_using_grape4();
-	void calculate_uncorrected_gravity_direct();
-
-	void read(istream & );
-	void write(ostream & );
-	void atos(istream & );
-	void stoa(ostream & );
-	void dump();
-	void  setup_tree();
-	void generate_cube(int nx);
-	void apply_vf(nbody_VF_ptr);
-	void apply_vf(nbody_RF_ptr, real);
-	void apply_vf(nbody_RRF_ptr, real, real);
-	void plot(real time);
-	real kinetic_energy();
-	real energy();
-	void show_energy();
-	void calculate_gravity();
-	void create_uniform_sphere(int nbody, real power_index, real r0);
-
-	void evolve( real dt, real tend);
-	void evolve_onestep( real dt);
-	void integrate( real dt);
-
-	void calculate_cmterms();
-	void make_collision(vector relpos, vector relv);
-	nbody_particle * get_particle_pointer(){return pb;}
-	void friend copy_nbody_particles(nbody_system * source,
-				       nbody_system * desitination);
-	void correct_gravity();
-	void calculate_neighbour();
-	void calculate_neighbour_dualtreewalk();
-};
-
-#endif
-
-

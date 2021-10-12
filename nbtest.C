@@ -374,14 +374,13 @@ void real_system::make_collision(vector relpos, vector relv)
 //
 // list of options
 // -i        name of snapshot input file       (no default)
-// -o        name of snapshot output file      (default: no output)
 // -d        timestep                          (default: 0.015625)
+// -o        name of snapshot output file      (default: no output)
 // -D        time interval for snapshot output (default: 1)
 // -T        time to stop integration          (default: 10)
 // -e        softening parameter epsilon2      (default: 0.025)
 // -t        opening angle theta               (default: 0.75)
 // -n        ncrit for Barnes' vectrization    (default: 1024)
-//           (ONLY used with GRAPE/HARP inplementation)
 // -w        window size for PGPLOT snapshot plot (default: 10)
 // -c        flag for collision run
 // -x        relative position vector for collision run (no default)
@@ -389,7 +388,7 @@ void real_system::make_collision(vector relpos, vector relv)
 // -s        scale factor for position scaling (default: 1)
 // -S        scale factor for velocity scaling (default: 1)
 //---------------------------------------------------------------------
-main(int argc, char ** argv)
+int main(int argc, char ** argv)
 {
     static real_system pb;
     ifstream fsnapin;
@@ -398,10 +397,11 @@ main(int argc, char ** argv)
 
     extern char *poptarg;
     int c;
-    char* param_string = "i:t:n:N:h";
+    char* param_string = "i:t:n:N:m:h";
     real theta = 0.1;
     int ncrit = 1024;
     int nctree = 16;
+    int mode = 0;
     while ((c = pgetopt(argc, argv, param_string)) != -1){
         switch(c) {
             case 'i': strcpy(fname,poptarg);
@@ -413,12 +413,15 @@ main(int argc, char ** argv)
 		      break;
             case 'N': nctree = atoi(poptarg);
 		      break;
+            case 'm': mode = atoi(poptarg);
+		      break;
             case 'h':		      
 		      cerr << "list of options\n";
 		      cerr << "-i        name of snapshot input file       (no default)\n";
 		      cerr << "-t        cutoff distance               (default: 0.1)\n";
 		      cerr << "-n        ncrit for Barnes' vectrization    (default: 1024)\n";
 		      cerr << "-N        crit for tree walk (default: 16)\n";
+		      cerr << "-m        mode (0:trad, 1: new, default: 0)\n";
 		      cerr << "-h        print this help\n";
 		      exit(1);
 		      break;
@@ -442,10 +445,14 @@ main(int argc, char ** argv)
     pb.ncrit_for_tree = ncrit;
     pb.nctree = nctree;
     cout << endl;
-    
-    pb.calculate_neighbour();
-    pb.calculate_neighbour();
-    pb.calculate_neighbour_dualtreewalk();
+    if (mode == 0){
+	pb.calculate_neighbour();
+	pb.calculate_neighbour();
+    }else{
+	pb.calculate_neighbour_dualtreewalk();
+	pb.calculate_neighbour_dualtreewalk();
+    }
+    return 0;
 }
 #endif
 
